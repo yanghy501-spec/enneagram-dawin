@@ -57,6 +57,7 @@ test('웹 화면은 동일한 Noto Sans KR 웹폰트와 공통 글자 크기 변
   assert.match(html, /--font-ui:"Noto Sans KR"/);
   assert.match(html, /--text-body:clamp\(/);
   assert.match(html, /font-family:var\(--font-ui\)/);
+  assert.match(html, /--font-ui:"Noto Sans KR",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif/);
 });
 
 test('긴 한글 문장은 어절 단위 줄바꿈과 넘침 방지를 적용한다', () => {
@@ -86,4 +87,30 @@ test('결과 PNG는 웹폰트를 기다리고 공통 줄바꿈 도우미를 사�
   assert.match(html, /function wrapCanvasText\(/);
   assert.match(html, /wrapCanvasText\(x,text,900\)/);
   assert.match(html, /"Noto Sans KR",sans-serif/);
+});
+
+test('PNG 줄바꿈은 공백 없는 긴 한글도 캔버스 폭 안에서 나눈다', () => {
+  const source = html.match(/function wrapCanvasText\([\s\S]*?\n(?=async function savePng)/)?.[0];
+  assert.ok(source);
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(`${source};globalThis.wrap=wrapCanvasText;`, context);
+  const lines = context.wrap(
+    { measureText: (text) => ({ width: Array.from(text).length }) },
+    '가나다라마바사아자차',
+    4,
+  );
+  assert.deepEqual(Array.from(lines), ['가나다라', '마바사아', '자차']);
+});
+
+test('웹폰트 응답이 멈춰도 지정 시간 뒤 PNG 생성을 계속한다', async () => {
+  const source = html.match(/async function waitForResultFont\([\s\S]*?\n(?=function wrapCanvasText)/)?.[0];
+  assert.ok(source);
+  const context = { Promise, setTimeout };
+  vm.createContext(context);
+  vm.runInContext(`${source};globalThis.wait=waitForResultFont;`, context);
+  const never = new Promise(() => {});
+  const startedAt = Date.now();
+  await context.wait({ fonts: { load: () => never, ready: never } }, 15);
+  assert.ok(Date.now() - startedAt < 250, '폰트 대기가 제한 시간 안에 끝나야 합니다.');
 });
